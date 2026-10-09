@@ -30,7 +30,7 @@ tables:
     # amd64 image, in two independent runs; the per-key MIN was landed. Row
     # count, keys, and schema stayed unchanged; the full-table scan then found
     # 0 isolated >3x m-neighbor spikes.
-    rows: 130906
+    rows: 141117
     status: complete
     collections:
       # Exact sidecar emitted by the original 2026-08-14 campaign. Its
@@ -67,3 +67,17 @@ tables:
         status: complete
         source_campaign_rows: 15
         source_campaign_status: complete
+      # 2026-10-09: K3-2x GEMM shapes (40 (n,k) pairs x bfloat16/fp8/fp8_block/nvfp4 x token counts) via a custom driver that
+      # bypasses the case generator and calls the stock run_gemm. 11840 cases attempted, 11691 rows produced; 1480 of them matched
+      # keys already in the table and were not added (appended 10211). 149 failures: 148 nvfp4 (n=2112 and n=320 violate the
+      # NVFP4 n%128/k%64 layout) and 1 fp8_block (m=32768,n=14336,k=67584: activation > 2^31 elements, quantizer overflow).
+      # case_plan_hash is over the custom driver's case ids. Runtime: sglang 0.5.14 pip venv (no container). Evidence: benchmarks/evidence/collector/b300-k3x-2026-10/
+      - collector_ref: 5b718eda99ca43013073ac4fe2793dd9f72e86fa
+        collector_hash: sha256:7f27b85ca4a39cd97a964f1a0373d86694b100d8bdd0e32a69ef0d1182c5c97d
+        case_plan_hash: sha256:935e3097c6c050a62ece81ba46bd586c428cc831a8d5e2e292cc25a22cf173a1
+        collected_at: '2026-10-09'
+        rows: 10211
+        status: complete
+        runtime:
+          framework: sglang
+          version: 0.5.14
