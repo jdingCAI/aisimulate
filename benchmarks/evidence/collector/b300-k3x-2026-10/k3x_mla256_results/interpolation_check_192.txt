@@ -1,0 +1,9 @@
+Interpolation check: predict measured 192-local-head rows (earlier B300 bundle, TP=1) from the new 128 and 256 rows (this run).
+generation_mla_perf lin: n=362 err median=-6.1% MAPE=9.1% p90|err|=19.8% worst=50.7% | rows>0.1ms n=120 MAPE=13.8% worst=34.9%
+generation_mla_perf geo: n=362 err median=-9.9% MAPE=13.0% p90|err|=26.7% worst=47.3% | rows>0.1ms n=120 MAPE=22.2% worst=44.2%
+   measured 192 lies between the 128 and 256 measurements in 81.5% of rows
+   large-workload m192/l128 median 2.06, l256/m192 median 1.27
+context_mla_perf lin: n=220 err median=-2.1% MAPE=4.2% p90|err|=9.3% worst=35.8% | rows>0.1ms n=167 MAPE=3.8% worst=28.6%
+context_mla_perf geo: n=220 err median=-7.2% MAPE=8.0% p90|err|=10.9% worst=34.8% | rows>0.1ms n=167 MAPE=8.3% worst=34.8%
+   measured 192 lies between the 128 and 256 measurements in 97.7% of rows
+   large-workload m192/l128 median 1.52, l256/m192 median 1.30

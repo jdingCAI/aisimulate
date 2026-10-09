@@ -1,0 +1,10 @@
+[
+ [
+  "SGLang causal_convNd Triton kernel intN token-offset overflow: total_tokens=N * conv_channels=N >= N**N (causal_convNd_triton.py:N-N; per-block views stride across the whole N-block buffer)",
+  74
+ ],
+ [
+  "CUDA error: an illegal memory access was encountered",
+  2
+ ]
+]

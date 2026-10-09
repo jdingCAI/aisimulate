@@ -1,0 +1,150 @@
+{
+ "summary": {
+  "op": "gemm",
+  "n_cases": 11840,
+  "types": [
+   "bfloat16",
+   "fp8",
+   "fp8_block",
+   "nvfp4"
+  ],
+  "pairs": 40
+ },
+ "meta": {
+  "pairs": {
+   "98304x14336": [
+    "kda_qkvg tp1"
+   ],
+   "24576x128": [
+    "kda_fb tp1"
+   ],
+   "14336x24576": [
+    "kda_o tp1",
+    "mla_o tp1"
+   ],
+   "36864x1536": [
+    "mla_q_b tp1"
+   ],
+   "49152x512": [
+    "mla_kv_b tp1"
+   ],
+   "24576x14336": [
+    "mla_gate tp1",
+    "shared_gate_up tp1",
+    "kda_qkvg tp4"
+   ],
+   "135168x14336": [
+    "dense_gate_up tp1"
+   ],
+   "14336x67584": [
+    "dense_down tp1"
+   ],
+   "14336x12288": [
+    "shared_down tp1",
+    "kda_o tp2",
+    "mla_o tp2"
+   ],
+   "163840x14336": [
+    "logits tp1"
+   ],
+   "49152x14336": [
+    "kda_qkvg tp2"
+   ],
+   "12288x128": [
+    "kda_fb tp2"
+   ],
+   "18432x1536": [
+    "mla_q_b tp2"
+   ],
+   "24576x512": [
+    "mla_kv_b tp2"
+   ],
+   "12288x14336": [
+    "mla_gate tp2",
+    "shared_gate_up tp2",
+    "kda_qkvg tp8"
+   ],
+   "67584x14336": [
+    "dense_gate_up tp2"
+   ],
+   "14336x33792": [
+    "dense_down tp2"
+   ],
+   "14336x6144": [
+    "shared_down tp2",
+    "kda_o tp4",
+    "mla_o tp4"
+   ],
+   "81920x14336": [
+    "logits tp2"
+   ],
+   "6144x128": [
+    "kda_fb tp4"
+   ],
+   "9216x1536": [
+    "mla_q_b tp4"
+   ],
+   "12288x512": [
+    "mla_kv_b tp4"
+   ],
+   "6144x14336": [
+    "mla_gate tp4",
+    "shared_gate_up tp4"
+   ],
+   "33792x14336": [
+    "dense_gate_up tp4"
+   ],
+   "14336x16896": [
+    "dense_down tp4"
+   ],
+   "14336x3072": [
+    "shared_down tp4",
+    "kda_o tp8",
+    "mla_o tp8"
+   ],
+   "40960x14336": [
+    "logits tp4"
+   ],
+   "3072x128": [
+    "kda_fb tp8"
+   ],
+   "4608x1536": [
+    "mla_q_b tp8"
+   ],
+   "6144x512": [
+    "mla_kv_b tp8"
+   ],
+   "3072x14336": [
+    "mla_gate tp8",
+    "shared_gate_up tp8"
+   ],
+   "16896x14336": [
+    "dense_gate_up tp8"
+   ],
+   "14336x8448": [
+    "dense_down tp8"
+   ],
+   "14336x1536": [
+    "shared_down tp8"
+   ],
+   "20480x14336": [
+    "logits tp8"
+   ],
+   "1792x14336": [
+    "router (replicated)"
+   ],
+   "7168x14336": [
+    "latent_down (replicated)"
+   ],
+   "14336x7168": [
+    "latent_up (replicated)"
+   ],
+   "2112x14336": [
+    "mla_downscale (replicated)"
+   ],
+   "320x14336": [
+    "kda_bfa (replicated)"
+   ]
+  }
+ }
+}

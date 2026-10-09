@@ -1,0 +1,4 @@
+cell(heads batch draft)=192 340 2 rc=0 23s {"phase": "verify", "heads": 192, "batch": 340, "draft": 2, "tokens_x_heads": 130560, "status": "ok"}
+cell(heads batch draft)=192 342 2 rc=3 22s {"phase": "verify", "heads": 192, "batch": 342, "draft": 2, "tokens_x_heads": 131328, "status": "fail", "err": "RuntimeError: SGLang KDA verify cleanup failed: torch.cuda.empty_cache: AcceleratorError
+cell(heads batch draft)=192 256 2 rc=0 21s {"phase": "verify", "heads": 192, "batch": 256, "draft": 2, "tokens_x_heads": 98304, "status": "ok"}
+PROBE_DONE

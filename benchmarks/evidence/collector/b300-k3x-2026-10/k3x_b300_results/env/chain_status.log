@@ -1,0 +1,24 @@
+=== START moe (sgl014) 2026-10-08T17:54:19+00:00
+=== MEMO RESTART 2026-10-08T20:59:24+00:00: driver patched (power_law_logits_v3 memo, cases reordered); 819 earlier moe cases used fresh draws
+=== START moe (sgl014) 2026-10-08T20:59:24+00:00
+=== END moe rc=0 2026-10-09T00:28:20+00:00 FINISHED moe fails=0
+=== START kda (sgl017) 2026-10-09T00:28:20+00:00
+   kda attempt 1 exited 3 (CUDA-class failure), restarting 2026-10-09T00:30:08+00:00
+   kda attempt 2 exited 3 (CUDA-class failure), restarting 2026-10-09T00:32:57+00:00
+=== END kda rc=0 2026-10-09T00:38:08+00:00 FINISHED kda fails=2
+=== START mla_context (sgl014) 2026-10-09T00:38:08+00:00
+=== END mla_context rc=0 2026-10-09T00:44:57+00:00 FINISHED mla_context fails=0
+=== START mla_generation (sgl014) 2026-10-09T00:44:57+00:00
+=== END mla_generation rc=0 2026-10-09T00:58:42+00:00 FINISHED mla_generation fails=604
+=== START mla_bmm_gen_pre (sgl014) 2026-10-09T00:58:42+00:00
+=== END mla_bmm_gen_pre rc=0 2026-10-09T00:59:04+00:00 FINISHED mla_bmm_gen_pre fails=0
+=== START mla_bmm_gen_post (sgl014) 2026-10-09T00:59:04+00:00
+=== END mla_bmm_gen_post rc=0 2026-10-09T00:59:26+00:00 FINISHED mla_bmm_gen_post fails=0
+=== START attention_context (sgl014) 2026-10-09T00:59:26+00:00
+=== END attention_context rc=0 2026-10-09T01:01:34+00:00 FINISHED attention_context fails=408
+=== START attention_generation (sgl014) 2026-10-09T01:01:34+00:00
+=== END attention_generation rc=0 2026-10-09T01:02:36+00:00 FINISHED attention_generation fails=0
+=== START gemm (sgl014) 2026-10-09T01:02:36+00:00
+   gemm attempt 1 exited 3 (CUDA-class failure), restarting 2026-10-09T01:09:20+00:00
+=== END gemm rc=0 2026-10-09T01:21:05+00:00 FINISHED gemm fails=148
+=== CHAIN_DONE 2026-10-09T01:21:05+00:00

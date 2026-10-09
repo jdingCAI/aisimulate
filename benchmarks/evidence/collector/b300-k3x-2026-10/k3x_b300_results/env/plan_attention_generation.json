@@ -1,0 +1,25 @@
+{
+ "summary": {
+  "op": "attention_generation",
+  "n_cases": 1072,
+  "q_heads": [
+   24,
+   48,
+   96,
+   192
+  ],
+  "kv_heads": [
+   24,
+   48,
+   96,
+   192
+  ],
+  "head_dim": [
+   128
+  ],
+  "backend": [
+   "trtllm_mha"
+  ]
+ },
+ "meta": {}
+}

@@ -1,0 +1,4 @@
+cell(M N K)=32768 14336 67584 rc=0 | A numel 2214592512 >=2^31 quant ok torch.Size([32768, 67584]) torch.Size([32768, 132]) (1, 32768) RESULT ok all stages 
+cell(M N K)=31744 14336 67584 rc=0 | A numel 2145386496 <2^31 quant ok torch.Size([31744, 67584]) torch.Size([31744, 132]) (1, 31744) RESULT ok all stages 
+cell(M N K)=32768 14336 32768 rc=0 | A numel 1073741824 <2^31 quant ok torch.Size([32768, 32768]) torch.Size([32768, 64]) (1, 32768) RESULT ok all stages 
+GEMM_PROBE_DONE

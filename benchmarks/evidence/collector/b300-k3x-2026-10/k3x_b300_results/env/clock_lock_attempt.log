@@ -1,0 +1,12 @@
+## nvidia-smi -pm 1
+Persistence mode is already Enabled for GPU 00000000:F3:00.0.
+All done.
+## nvidia-smi -ac 3996,2032
+The current user does not have permission to change clocks for GPU 00000000:F3:00.0.
+Terminating early due to previous errors.
+## nvidia-smi -lgc 2032,2032
+The current user does not have permission to change clocks for GPU 00000000:F3:00.0.
+Terminating early due to previous errors.
+## nvidia-smi -lmc 3996,3996
+This option is not supported. Please use --lock-memory-clocks-deferred instead.
+All done.

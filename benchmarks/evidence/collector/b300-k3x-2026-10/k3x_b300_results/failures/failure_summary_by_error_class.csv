@@ -1,0 +1,9 @@
+op,error_class,cases
+attention_context,"ValueError: SGLang N.N.N trtllm_mha quantizes Q to FPN internally when the KV cache is FPN, so a BFN-compute prefill on an FPN KV cache does not exist; this com",408
+gemm,"AcceleratorError: CUDA error: an illegal memory access was encountered
+Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/gro",1
+gemm,"ValueError: SGLang NVFPN dense GEMM requires n % N == N and k % N == N for the modelopt block-scale layout, got n=N, k=N",148
+kda,RuntimeError: SGLang KDA context collection failed strict completeness: ok=N error=N skip=N; failed cells: batch_size=N seq_len=N: ValueError: SGLang causal_con,4
+kda,"RuntimeError: SGLang KDA verify cleanup failed: torch.cuda.empty_cache: AcceleratorError: CUDA error: an illegal memory access was encountered
+Search for `cudaE",2
+mla_generation,RuntimeError: Error in function 'computeCtaAndClusterConfig' at /root/work/sglN/lib/pythonN.N/site-packages/flashinfer/data/include/flashinfer/trtllm/fmha/fmhaK,604

@@ -1,0 +1,136 @@
+{
+ "summary": {
+  "op": "moe",
+  "n_cases": 3712,
+  "quants": [
+   "w4a16_mxfp4",
+   "w4a8_mxfp4_mxfp8"
+  ],
+  "tp": [
+   1,
+   2,
+   4,
+   8
+  ],
+  "ep": [
+   16,
+   32,
+   64,
+   128,
+   256,
+   448,
+   896,
+   1792
+  ],
+  "tokens": [
+   1,
+   2,
+   4,
+   8,
+   16,
+   32,
+   48,
+   64,
+   80,
+   96,
+   128,
+   160,
+   192,
+   256,
+   320,
+   384,
+   512,
+   768,
+   1024,
+   1536,
+   2048,
+   3584,
+   4096,
+   7168,
+   8192,
+   12288,
+   14336,
+   21504,
+   28672
+  ],
+  "dists": [
+   [
+    "balanced",
+    0.0
+   ],
+   [
+    "power_law",
+    1.01
+   ]
+  ],
+  "shape": [
+   [
+    7168,
+    6144,
+    32,
+    1792
+   ]
+  ]
+ },
+ "meta": {
+  "template_w4a16": [
+   "w4a16_mxfp4",
+   1,
+   3584,
+   3072,
+   16,
+   896,
+   1,
+   1,
+   "moonshotai/Kimi-K3",
+   "balanced",
+   0.0,
+   null,
+   "flashinfer_mxfp4",
+   "silu",
+   true,
+   false,
+   null,
+   null,
+   "sigmoid",
+   "DeepSeekV3",
+   1.0,
+   true,
+   true,
+   1,
+   1,
+   false,
+   false
+  ],
+  "template_w4a8": [
+   "w4a8_mxfp4_mxfp8",
+   1,
+   3584,
+   3072,
+   16,
+   896,
+   1,
+   1,
+   "moonshotai/Kimi-K3",
+   "balanced",
+   0.0,
+   null,
+   "flashinfer_mxfp4",
+   "silu",
+   true,
+   false,
+   null,
+   null,
+   "sigmoid",
+   "DeepSeekV3",
+   1.0,
+   true,
+   true,
+   1,
+   1,
+   false,
+   false
+  ],
+  "logit_memo": "power_law_logits_v3 memoized in driver: pool of 5 independent draws per (tokens,E,topk,ep,alpha), shared across moe_tp and quant mode; applied from case #820 onward (earlier 819 cases used fresh draws)"
+ }
+}

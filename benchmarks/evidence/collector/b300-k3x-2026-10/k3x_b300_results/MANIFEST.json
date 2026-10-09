@@ -1,0 +1,326 @@
+{
+ "generated": "2026-10-09T01:24:05+00:00",
+ "system_tree": "b300_sxm",
+ "device": "NVIDIA B300 SXM6 AC",
+ "model_label": "kimi-k3-2x (hypothetical)",
+ "repo_commit": "5b718eda",
+ "clocks_locked": false,
+ "clock_summary": {
+  "samples": 4700,
+  "busy_samples": 219,
+  "sm_mhz_busy_min": 960,
+  "sm_mhz_busy_median": 1897.0,
+  "sm_mhz_busy_max": 2032,
+  "mem_mhz_busy_median": 3996.0,
+  "power_w_busy_median": 942.14,
+  "temp_c_busy_max": 66,
+  "throttle_reasons_seen": [
+   "0x0000000000000000",
+   "0x0000000000000001",
+   "0x0000000000000004"
+  ]
+ },
+ "tables": {
+  "moe_perf": {
+   "path": "data/b300_sxm/moe/sglang/0.5.14/moe_perf.parquet",
+   "csv": "csv/moe_perf.csv",
+   "rows": 3712,
+   "framework_version": "0.5.14",
+   "ops": [
+    "moe"
+   ],
+   "problems": [],
+   "columns": [
+    "framework",
+    "version",
+    "device",
+    "op_name",
+    "kernel_source",
+    "moe_dtype",
+    "num_tokens",
+    "hidden_size",
+    "inter_size",
+    "topk",
+    "num_experts",
+    "moe_tp_size",
+    "moe_ep_size",
+    "distribution",
+    "latency"
+   ],
+   "sha256_parquet": "c38ce9b207ddfad09881ebfbe09d14f066b8cff363cc0820398b529b0a9c575b"
+  },
+  "kda_perf": {
+   "path": "data/b300_sxm/kda/sglang/0.5.17/kda_perf.parquet",
+   "csv": "csv/kda_perf.csv",
+   "rows": 940,
+   "framework_version": "0.5.17",
+   "ops": [
+    "kda"
+   ],
+   "problems": [],
+   "columns": [
+    "framework",
+    "version",
+    "device",
+    "op_name",
+    "kernel_source",
+    "phase",
+    "batch_size",
+    "seq_len",
+    "num_tokens",
+    "d_model",
+    "d_conv",
+    "num_k_heads",
+    "head_k_dim",
+    "num_v_heads",
+    "head_v_dim",
+    "model_name",
+    "latency"
+   ],
+   "sha256_parquet": "30f11c292a5ab46e11f00110e728f99236572b479e52dafded3555e4652f1607"
+  },
+  "context_mla_perf": {
+   "path": "data/b300_sxm/mla/sglang/0.5.14/context_mla_perf.parquet",
+   "csv": "csv/context_mla_perf.csv",
+   "rows": 880,
+   "framework_version": "0.5.14",
+   "ops": [
+    "mla_context"
+   ],
+   "problems": [],
+   "columns": [
+    "framework",
+    "version",
+    "device",
+    "op_name",
+    "kernel_source",
+    "mla_dtype",
+    "kv_cache_dtype",
+    "num_heads",
+    "batch_size",
+    "isl",
+    "tp_size",
+    "step",
+    "latency"
+   ],
+   "sha256_parquet": "0629d7c61b5ae233a5d42f2ac35e2fefc7e1a3db7c1a57e167ad17f158ad2fc2"
+  },
+  "generation_mla_perf": {
+   "path": "data/b300_sxm/mla/sglang/0.5.14/generation_mla_perf.parquet",
+   "csv": "csv/generation_mla_perf.csv",
+   "rows": 844,
+   "framework_version": "0.5.14",
+   "ops": [
+    "mla_generation"
+   ],
+   "problems": [],
+   "columns": [
+    "framework",
+    "version",
+    "device",
+    "op_name",
+    "kernel_source",
+    "mla_dtype",
+    "kv_cache_dtype",
+    "num_heads",
+    "batch_size",
+    "isl",
+    "tp_size",
+    "step",
+    "latency"
+   ],
+   "sha256_parquet": "16ebe827541b29fe9d1900d1832db606ecf3e49366a240a052895b1f7fe3c242"
+  },
+  "mla_bmm_perf": {
+   "path": "data/b300_sxm/mla_bmm/sglang/0.5.14/mla_bmm_perf.parquet",
+   "csv": "csv/mla_bmm_perf.csv",
+   "rows": 424,
+   "framework_version": "0.5.14",
+   "ops": [
+    "mla_bmm_gen_pre",
+    "mla_bmm_gen_post"
+   ],
+   "problems": [],
+   "columns": [
+    "framework",
+    "version",
+    "device",
+    "op_name",
+    "kernel_source",
+    "bmm_dtype",
+    "num_tokens",
+    "num_heads",
+    "latency"
+   ],
+   "sha256_parquet": "16a41d8e0fbbe98c3bf88b4350dd49240d0ca16612a54be3291d7616296638c9"
+  },
+  "context_attention_perf": {
+   "path": "data/b300_sxm/attention/sglang/0.5.14/context_attention_perf.parquet",
+   "csv": "csv/context_attention_perf.csv",
+   "rows": 816,
+   "framework_version": "0.5.14",
+   "ops": [
+    "attention_context"
+   ],
+   "problems": [],
+   "columns": [
+    "framework",
+    "version",
+    "device",
+    "op_name",
+    "kernel_source",
+    "batch_size",
+    "isl",
+    "num_heads",
+    "num_key_value_heads",
+    "head_dim",
+    "beam_width",
+    "attn_dtype",
+    "kv_cache_dtype",
+    "step",
+    "window_size",
+    "latency"
+   ],
+   "sha256_parquet": "3fc35399b69669a96fbb5c27bb67fe4d7ec4c15a9d6af6b18d1ba78f13b9315f"
+  },
+  "generation_attention_perf": {
+   "path": "data/b300_sxm/attention/sglang/0.5.14/generation_attention_perf.parquet",
+   "csv": "csv/generation_attention_perf.csv",
+   "rows": 1072,
+   "framework_version": "0.5.14",
+   "ops": [
+    "attention_generation"
+   ],
+   "problems": [],
+   "columns": [
+    "framework",
+    "version",
+    "device",
+    "op_name",
+    "kernel_source",
+    "batch_size",
+    "isl",
+    "num_heads",
+    "num_key_value_heads",
+    "head_dim",
+    "beam_width",
+    "attn_dtype",
+    "kv_cache_dtype",
+    "step",
+    "window_size",
+    "latency"
+   ],
+   "sha256_parquet": "49a181c75f03be75d59729e8bcacfb037e9a663a452a0afa1a2cf5c5ca8d7448"
+  },
+  "gemm_perf": {
+   "path": "data/b300_sxm/gemm/sglang/0.5.14/gemm_perf.parquet",
+   "csv": "csv/gemm_perf.csv",
+   "rows": 11691,
+   "framework_version": "0.5.14",
+   "ops": [
+    "gemm"
+   ],
+   "problems": [],
+   "columns": [
+    "framework",
+    "version",
+    "device",
+    "op_name",
+    "kernel_source",
+    "gemm_dtype",
+    "m",
+    "n",
+    "k",
+    "latency"
+   ],
+   "sha256_parquet": "692112f3b242148a2f6a048c4b67e4273fa077f74f228ef5c9cf02d9db86f86e"
+  }
+ },
+ "per_op": {
+  "moe": {
+   "table": "moe_perf",
+   "family": "moe",
+   "planned_cases": 3712,
+   "ok_cases": 3712,
+   "failed_cases": 0,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.14"
+  },
+  "kda": {
+   "table": "kda_perf",
+   "family": "kda",
+   "planned_cases": 12,
+   "ok_cases": 6,
+   "failed_cases": 6,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.17"
+  },
+  "mla_context": {
+   "table": "context_mla_perf",
+   "family": "mla",
+   "planned_cases": 880,
+   "ok_cases": 880,
+   "failed_cases": 0,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.14"
+  },
+  "mla_generation": {
+   "table": "generation_mla_perf",
+   "family": "mla",
+   "planned_cases": 1448,
+   "ok_cases": 844,
+   "failed_cases": 604,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.14"
+  },
+  "mla_bmm_gen_pre": {
+   "table": "mla_bmm_perf",
+   "family": "mla_bmm",
+   "planned_cases": 200,
+   "ok_cases": 200,
+   "failed_cases": 0,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.14"
+  },
+  "mla_bmm_gen_post": {
+   "table": "mla_bmm_perf",
+   "family": "mla_bmm",
+   "planned_cases": 224,
+   "ok_cases": 224,
+   "failed_cases": 0,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.14"
+  },
+  "attention_context": {
+   "table": "context_attention_perf",
+   "family": "attention",
+   "planned_cases": 1224,
+   "ok_cases": 816,
+   "failed_cases": 408,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.14"
+  },
+  "attention_generation": {
+   "table": "generation_attention_perf",
+   "family": "attention",
+   "planned_cases": 1072,
+   "ok_cases": 1072,
+   "failed_cases": 0,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.14"
+  },
+  "gemm": {
+   "table": "gemm_perf",
+   "family": "gemm",
+   "planned_cases": 11840,
+   "ok_cases": 11691,
+   "failed_cases": 149,
+   "unfinished_cases": 0,
+   "expected_version": "0.5.14"
+  }
+ },
+ "runtimes": {
+  "0.5.14": "moe gemm mla mla_bmm attention",
+  "0.5.17": "kda"
+ }
+}

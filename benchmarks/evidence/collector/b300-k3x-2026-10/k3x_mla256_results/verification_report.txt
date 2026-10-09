@@ -1,0 +1,18 @@
+## generation_mla_perf: 1448 rows; local heads x tp: {(32, 8): 362, (64, 4): 362, (128, 2): 362, (256, 1): 362}
+   devices=['NVIDIA B300 SXM6 AC'] kernel_source=['trtllm_mla'] (mla_dtype,kv)={('bfloat16', 'bfloat16'): 724, ('fp8', 'fp8'): 724}
+   overlap vs shipped gb300: 1086 matched rows, new/shipped latency ratio median=1.001 p10=0.884 p90=1.037 min=0.790 max=1.983
+      rows with shipped latency>0.1 ms: 230, median ratio 1.027
+   overlap vs shipped b300_sxm: 1086 matched rows, new/shipped latency ratio median=1.017 p10=0.992 p90=1.056 min=0.787 max=2.030
+      rows with shipped latency>0.1 ms: 230, median ratio 1.000
+   latency(256 local heads)/latency(128): n=362 median=1.850 p10=1.010 p90=2.734 min=0.651 max=3.293
+   merge candidate: shipped 5792 + new 362 (local heads [np.int64(256)]) = 6154; fp8-KV mla_dtype relabelled fp8->bfloat16 on 0 rows
+   reachable generation keys [kv][256][b][s+step]: 362
+## context_mla_perf: 880 rows; local heads x tp: {(32, 8): 220, (64, 4): 220, (128, 2): 220, (256, 1): 220}
+   devices=['NVIDIA B300 SXM6 AC'] kernel_source=['trtllm_mla'] (mla_dtype,kv)={('bfloat16', 'bfloat16'): 440, ('fp8', 'fp8'): 440}
+   overlap vs shipped gb300: 660 matched rows, new/shipped latency ratio median=1.045 p10=0.983 p90=1.122 min=0.733 max=1.257
+      rows with shipped latency>0.1 ms: 401, median ratio 1.052
+   overlap vs shipped b300_sxm: 660 matched rows, new/shipped latency ratio median=0.999 p10=0.974 p90=1.019 min=0.704 max=1.386
+      rows with shipped latency>0.1 ms: 407, median ratio 0.996
+   latency(256 local heads)/latency(128): n=220 median=1.940 p10=1.410 p90=2.210 min=1.109 max=3.965
+   merge candidate: shipped 3520 + new 220 (local heads [np.int64(256)]) = 3740; fp8-KV mla_dtype relabelled fp8->bfloat16 on 110 rows
+   reachable context keys [mla_dtype][kv][256][isl][b]: 220  mla_dtype/kv combos: [('bfloat16', 'bfloat16'), ('bfloat16', 'fp8')]

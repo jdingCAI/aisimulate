@@ -1,0 +1,20 @@
+{
+ "summary": {
+  "op": "mla_context",
+  "n_cases": 880,
+  "heads": [
+   192
+  ],
+  "tp": [
+   1,
+   2,
+   4,
+   8
+  ],
+  "dtypes": [
+   "torch.bfloat16",
+   "torch.float8_e4m3fn"
+  ]
+ },
+ "meta": {}
+}

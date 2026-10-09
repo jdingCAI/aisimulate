@@ -1,0 +1,41 @@
+n,k,model_ops,rows,dtypes,m_min,m_max
+320,14336,kda_bfa (replicated),222,"bfloat16,fp8,fp8_block",1,32768
+1792,14336,router (replicated),296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+2112,14336,mla_downscale (replicated),222,"bfloat16,fp8,fp8_block",1,32768
+3072,128,kda_fb tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+3072,14336,mla_gate tp8 | shared_gate_up tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+4608,1536,mla_q_b tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+6144,128,kda_fb tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+6144,512,mla_kv_b tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+6144,14336,mla_gate tp4 | shared_gate_up tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+7168,14336,latent_down (replicated),296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+9216,1536,mla_q_b tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+12288,128,kda_fb tp2,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+12288,512,mla_kv_b tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+12288,14336,mla_gate tp2 | shared_gate_up tp2 | kda_qkvg tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,1536,shared_down tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,3072,shared_down tp4 | kda_o tp8 | mla_o tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,6144,shared_down tp2 | kda_o tp4 | mla_o tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,7168,latent_up (replicated),296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,8448,dense_down tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,12288,shared_down tp1 | kda_o tp2 | mla_o tp2,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,16896,dense_down tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,24576,kda_o tp1 | mla_o tp1,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,33792,dense_down tp2,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+14336,67584,dense_down tp1,295,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+16896,14336,dense_gate_up tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+18432,1536,mla_q_b tp2,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+20480,14336,logits tp8,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+24576,128,kda_fb tp1,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+24576,512,mla_kv_b tp2,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+24576,14336,mla_gate tp1 | shared_gate_up tp1 | kda_qkvg tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+33792,14336,dense_gate_up tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+36864,1536,mla_q_b tp1,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+40960,14336,logits tp4,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+49152,512,mla_kv_b tp1,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+49152,14336,kda_qkvg tp2,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+67584,14336,dense_gate_up tp2,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+81920,14336,logits tp2,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+98304,14336,kda_qkvg tp1,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+135168,14336,dense_gate_up tp1,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768
+163840,14336,logits tp1,296,"bfloat16,fp8,fp8_block,nvfp4",1,32768

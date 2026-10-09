@@ -1,0 +1,17 @@
+{
+ "summary": {
+  "op": "mla_bmm_gen_pre",
+  "n_cases": 200,
+  "heads": [
+   24,
+   48,
+   96,
+   192
+  ],
+  "dtypes": [
+   "bfloat16",
+   "fp8"
+  ]
+ },
+ "meta": {}
+}
