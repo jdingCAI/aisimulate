@@ -103,7 +103,7 @@ fn query_custom_allreduce_table(
     // reroute. Handled here rather than via the DB-internal reroute in
     // `query_custom_allreduce_scaled`, which is silicon-only; in SILICON
     // mode both routes evaluate the identical `query_nccl_scaled` call.
-    if db.system_spec.node.num_gpus_per_node == 72
+    if db.system_spec.node.num_gpus_per_node >= 72
         && tp_size > 4
         && matches!(
             db.database_mode,

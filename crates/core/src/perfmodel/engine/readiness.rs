@@ -647,7 +647,7 @@ impl Availability<'_> {
                 "moe_perf.parquet",
             ]),
             CustomAllReduce(comm) if comm.tp_size > 1 => {
-                if self.db.system_spec.node.num_gpus_per_node == 72
+                if self.db.system_spec.node.num_gpus_per_node >= 72
                     && comm.tp_size > 4
                     && matches!(
                         self.db.database_mode,

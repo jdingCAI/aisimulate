@@ -223,7 +223,7 @@ impl CommunicationTable {
             return Ok(LeafValue::latency_only(0.0));
         }
         let per_node = spec.node.num_gpus_per_node;
-        if per_node == 72 && tp_size > 4 {
+        if per_node >= 72 && tp_size > 4 {
             return self.query_nccl_scaled(spec, quant, "all_reduce", tp_size, message_size);
         }
         // Select the greatest measured rank-count slice not above the request.
