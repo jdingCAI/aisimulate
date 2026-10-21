@@ -12,6 +12,7 @@ SPDX-License-Identifier: Apache-2.0
 | G1 | GPU memory | `block_size`, `prefix_caching`, `bytes_per_token`, `capacity` |
 | G2 | Host (CPU) memory | `host_offload` |
 | G3 | Storage shared by workers | `g3_offload` |
+| G2 peer fetch (KVCR) | Another rank's G2 | `kvcr` |
 
 Recurrent-state models also use `state_cache`; see
 [state cache](#state-cache).
@@ -32,6 +33,7 @@ engine:
         g3_offload:              # optional G3: aggregated only, requires host_offload
           scope: cluster_shared
           num_g3_blocks: 16384
+        # kvcr: {}               # optional KVCR peer fetch: not on decode, requires private host_offload, not with g3_offload
 ```
 
 ## KV cache fields
@@ -50,6 +52,7 @@ All paths below are under `engine.workers.<role>.kv_cache`.
 | `capacity.bytes` | Unset | predict only | G1 bytes per attention-DP rank, instead of `blocks`. Requires explicit `block_size` and numeric `bytes_per_token`, unless `state_cache: {}` infers them. |
 | `host_offload` | Unset (off) | fixed | G2 block; see [host offload](#host-offload-g2). |
 | `g3_offload` | Unset (off) | Rejected | G3 block; see [G3 offload](#g3-offload). |
+| `kvcr` | Unset (off) | Rejected | KVCR block; see [KVCR peer fetch](#kvcr-peer-fetch). |
 | `state_cache` | Unset (off) | Rejected | Recurrent-state block; see [state cache](#state-cache). |
 | `prefix_match_unit` | Unset | Rejected | Prefix-matching granularity with `state_cache`. |
 
@@ -78,7 +81,7 @@ in `requests.jsonl`:
 | Field | Meaning |
 | --- | --- |
 | `first_admission_g1_reused_input_tokens` | Prompt tokens served from G1 when the request was first admitted. |
-| `first_admission_host_reused_input_tokens` | Prompt tokens restored from G2 (and G3). |
+| `first_admission_host_reused_input_tokens` | Prompt tokens restored from G2, including G3 restores and KVCR pulls. |
 | `admission_history` | Every admission of the request, including after preemption, with the pool it reused from. |
 
 The Dynamo KV Router's overlap score is a routing estimate; these fields record
@@ -232,14 +235,112 @@ each other. If the rank makes no progress for 1,024 consecutive restore rounds,
 the request recomputes the missing part instead. Each time this happens
 `g3_offload.bypassed_restores` increments. vLLM has no such rule.
 
+<a id="kvcr-peer-fetch"></a>
+
+## KVCR peer fetch
+
+KVCR (KV Cache Runner) lets a rank pull a prompt prefix it is missing from
+another rank's G2 over the network, instead of recomputing it. A router attaches
+a hint naming the source rank; without hints KVCR does nothing. It requires
+private G2 (`host_offload` with the default `scope: dp_rank_local`). Add it next
+to `host_offload` in the [host offload example](#host-offload-g2):
+
+```yaml
+kvcr:
+  latency_to_first_byte_ms: 1.0
+  bandwidth_gbps: 50.0
+```
+
+| Knob (under `kvcr`) | Default | Rules |
+|---|---|---|
+| `latency_to_first_byte_ms` | `1.0` | Fixed delay before each pull moves bytes, for the control round trip and the source pin. |
+| `bandwidth_gbps` | `50.0` | Per source rank (one attention-DP rank of a worker), decimal GB/s (a 400 Gb/s NIC is `50`). All GPUs of the rank share it, and so do concurrent pulls from it, equally. `0` means unlimited. |
+
+`kvcr: {}` uses the defaults. These defaults are modeling assumptions, not
+measured values.
+
+### How KVCR behaves
+
+- When some of a hinted request's prompt blocks are in neither G1 nor the
+  rank's own G2, the rank checks the source's G2 block by block, in prompt
+  order, and pulls each missing block the source holds. It stops at the first
+  block the source lacks.
+- A pull starts when the source finishes its current forward pass, including
+  a pass that starts at the same instant the pull is requested, waits
+  `latency_to_first_byte_ms`, then moves bytes. Each pulled block carries the
+  KV of every GPU of the source rank: G2 block bytes times the role's
+  `parallelism.tensor` (native `tensor_parallel_size`). The ranks of one worker run
+  their passes in lockstep, so a pull from another DP rank of the same worker
+  starts when the worker's current pass ends. Pulled blocks land in the rank's
+  own G2 and load to G1 like any G2 hit, so pull and load time add to TTFT.
+- Requests on one rank that need the same blocks share one pull. A request that
+  ends while its pull is in flight leaves the pulled blocks in G2.
+
+The model simplifies KVCR:
+
+- The rank sees the source's G2 contents when it looks up the prefix. The
+  source's blocks are then protected from eviction until the rank takes the
+  landed pull: as soon as it lands if the rank's worker is idle, otherwise when
+  that worker's current pass ends. The pulled blocks become usable in the
+  rank's G2 at the same point.
+- The rank reserves G2 slots only for the blocks the source holds, all in one
+  reservation per pull. A pull never evicts from the rank's G2 a block of the
+  hinted prompt that the rank's G1 does not hold; it stops at the first block
+  it has no other room for. G2 copies of prompt blocks already in G1 stay
+  evictable, since the request does not load them.
+- While its pull is in flight, a request is not looked up again, as vLLM skips
+  a request that waits for remote KV.
+- Pulls do not fail or time out, and the first pull between two ranks has no
+  connection setup cost.
+- A pull moves one block share per tensor-parallel GPU. KV that each GPU
+  replicates (an MLA latent, or a KV head shared by several GPUs when
+  `num_kv_heads` is smaller than `tensor`) is counted once per GPU.
+
+When a request's prefix is larger than G2 can hold, pulls can keep evicting
+each other. If the rank makes no progress for 1,024 consecutive pull rounds,
+the request recomputes the missing part instead. Each time this happens
+`kvcr.bypassed` increments. vLLM has no such rule.
+
+The prediction summary includes a `kvcr` section: `pulls` by result (`success`,
+or `partial` when the source held only part of the missing blocks or the rank
+had no free G2 slot for the rest, including a block the same request already
+pulled at that instant), pulled `blocks` and `bytes` (summed over
+the GPUs of each source rank),
+`remote_deliver_ms` (total time from submit to landing in G2), `source_wait_ms`
+(total time spent waiting for the source's pass to end) and `loaded_blocks`
+(pulled blocks, counted when their first load into G1 starts). `bypassed`
+appears only when it is nonzero. The counters update as the pool's ranks run.
+A run stopped by `traffic.stop.max_virtual_time_seconds` (native
+`max_sim_time_ms`) can miss pulls that landed during a pass still running at
+the cutoff; a run that completes counts every pull.
+
+### Supported
+
+KVCR supports vLLM aggregated workers with any `attention_data`, and pulls
+between the prefill ranks of P/D. Workers may be fixed or Planner-scaled; a
+draining worker is removed only after every pull from or into it has landed and
+been taken by its target. Rejected: missing or `cluster_shared` `host_offload`,
+`g3_offload` together with `kvcr`, `kvcr` on the decode role, `parallelism.pipeline` above 1,
+`parallelism.prefill_context` above 1 (native `prefill_context_parallel_size`), and `recommend`.
+Everything G2 rejects is rejected too, including SGLang and TensorRT-LLM.
+
+Hints come from the placement policy (see
+[native composition](../../adapters/native-composition.md#placementpolicy)) or
+from `kv_hints` on native ReplaySpec requests (see
+[Rust API](../api/rust.md#serializable-spec)). Replay ignores a hint that names
+the receiving rank. CLI traffic carries no hints, so
+`aisimulate predict --stack engine` runs KVCR idle: apart from the `kvcr`
+section, the results equal G2 alone.
+
 <a id="state-cache"></a>
 <a id="manual-state-cache-sizing"></a>
 
 ## State cache
 
-Models with recurrent layers (such as Kimi K3's KDA layers) keep a fixed-size
-state per request in addition to per-token KV. `state_cache` reserves that state
-in the same G1 pool. The fragment below goes under
+Hybrid-KV models keep a fixed-size state per request in addition to per-token
+KV: the recurrent state of Kimi K3's KDA layers, or the sliding-window KV and
+compressor states of DeepSeek V4. `state_cache` reserves that state in the same
+G1 pool. The fragment below goes under
 `engine.workers.aggregated`, or under both `prefill` and `decode` for P/D:
 
 ```yaml
@@ -256,7 +357,8 @@ This gives eight 1024-byte blocks. Each request's state takes two blocks
 | Knob | Default | Rules |
 |---|---|---|
 | `state_cache.bytes_per_request` | Inferred | State bytes per request per rank. When set, `block_size` and numeric `bytes_per_token` must also be set. |
-| `state_cache.mamba_cache_dtype` | `auto` | `auto` (model dtype), `float16` or `float32`. Used when bytes are inferred. |
+| `state_cache.mamba_cache_dtype` | `auto` | Kimi K3 only. `auto` (model dtype), `float16` or `float32`. Used when bytes are inferred. |
+| `state_cache.indexer_cache_dtype` | `auto` | DeepSeek V4 only. `auto` (vLLM's FP8), `fp8` or `mxfp4`; vLLM supports `mxfp4` only on Blackwell datacenter GPUs. Used when bytes are inferred. |
 | `prefix_match_unit` | Unset (`block_size`) | Positive divisor of `block_size`. Lets prefixes match at a finer granularity than the physical block. |
 
 `state_cache: {}` infers Kimi K3 geometry from the model. `block_size` is then
@@ -269,6 +371,21 @@ from aisimulate_core.sdk import estimate_state_cache
 
 state = estimate_state_cache("moonshotai/Kimi-K3", tp_size=8, kvcache_quant_mode="fp8", block_size=128)
 ```
+
+For DeepSeek V4, `state_cache: {}` follows vLLM's allocation. vLLM stores
+`fp8_ds_mla` KV and gives every cache group the same pool row, as wide as the
+widest group. A request holds one row per 256 tokens of compressed KV and
+indexer keys (`block_size` 256, `bytes_per_token` one row per 256 tokens), plus
+a 26-row state for its sliding-window groups (SWA KV and compressor states). For
+DeepSeek-V4-Flash, 1,002,240-byte rows give 3915 bytes per token and a
+26,058,240-byte state on every TP rank.
+Leave `block_size` and `bytes_per_token` unset. Speculative decoding (`nextn`
+or `speculation`) widens each sliding window by the draft tokens, so one draft
+token gives 30 rows. These are modeling assumptions: 26 rows is vLLM's decode
+peak (it dips to 24 between window blocks), vLLM also holds sliding-window slots
+for every token of a prefill chunk until the next step (3,360 rows for an
+8,192-token chunk), and a prefix hit restores 22 of the 26 rows. None of these
+is modeled.
 
 Prefix reuse resumes from a stored state snapshot, so it does not land on every
 matching token. With `block_size: 1536` and `prefix_match_unit: 128`, a cold
@@ -287,7 +404,8 @@ than the padded `bytes_per_request` for Kimi K3 at TP8), transfers it after all
 but the last prompt token and recomputes that token on the decode worker. Replay
 transfers the state for the whole prompt and does not model the recompute.
 
-Supported: aggregated and P/D vLLM, fixed `capacity`, `predict --stack engine`.
+Supported: aggregated and P/D vLLM, fixed `capacity`, `predict --stack engine`;
+inferred geometry for Kimi K3 and DeepSeek V4 at PP=1.
 Rejected: `recommend`, G2/G3 offload, and speculative decoding with
 `prefix_match_unit`.
 
@@ -311,7 +429,8 @@ Rejected: `recommend`, G2/G3 offload, and speculative decoding with
 AgentX snapshot, warmup and continuous-profile traffic supports G2 on vLLM with
 one aggregated worker, or one prefill and one decode worker, all with
 `attention_data: 1`, static workers and no speculative decoding. Either G2 scope
-works; G3 is not supported. Results are qualified `functional_only`.
+works; G3 is not supported. `kvcr` is accepted, but with one rank per role there
+is no peer, so it stays idle. Results are qualified `functional_only`.
 
 Two small offline fixtures use fixed timing and need no GPU:
 

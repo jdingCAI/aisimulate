@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::options::{ForwardPassPerfOptions, validate_options};
+use super::options::{CorrectionMode, ForwardPassPerfOptions, validate_options};
 use crate::AicError;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -23,15 +23,8 @@ pub struct EstimatorConfig {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OpLevelConfig {
-    /// Existing measured generation-MoE distribution; context is unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub decode_workload_distribution: Option<String>,
-    /// Opt-in measured graph composition; only qualified direct prefill shapes.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prefill_graph_profile: Option<String>,
-    /// Resolved immutable publication identity, retained in saved configurations.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prefill_graph_profile_id: Option<String>,
+    pub execution_profile: Option<crate::perfmodel::execution_profile::ExecutionProfileSelection>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -559,6 +552,8 @@ pub enum CorrectionFeatureSpace {
 #[serde(default, deny_unknown_fields)]
 pub struct CorrectionConfig {
     pub enabled: bool,
+    #[serde(skip_serializing_if = "CorrectionMode::is_auto")]
+    pub mode: CorrectionMode,
     pub feature_space: CorrectionFeatureSpace,
     pub sampling: SamplingConfig,
     pub min_observations: usize,
@@ -572,6 +567,7 @@ impl Default for CorrectionConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            mode: CorrectionMode::Auto,
             feature_space: CorrectionFeatureSpace::LegacyWorkload,
             sampling: SamplingConfig::default(),
             min_observations: 5,
@@ -624,6 +620,7 @@ impl EstimatorConfig {
                 .map_err(|error| invalid_migration("legacy options", error))?;
             let mut migrated = serde_json::json!({});
             for (legacy, paths) in [
+                ("correction_mode", &["correction.mode"][..]),
                 (
                     "max_observations",
                     &[
@@ -668,7 +665,11 @@ impl EstimatorConfig {
             ] {
                 if supplied.get(legacy).is_some() {
                     for path in paths {
-                        insert_explicit(&mut migrated, path, normalized[legacy].clone());
+                        insert_explicit(
+                            &mut migrated,
+                            path,
+                            normalized.get(legacy).unwrap_or(&supplied[legacy]).clone(),
+                        );
                     }
                 }
             }
@@ -719,6 +720,7 @@ impl EstimatorConfig {
     pub(crate) fn correction_options(&self) -> ForwardPassPerfOptions {
         let config = &self.correction;
         ForwardPassPerfOptions {
+            correction_mode: config.mode,
             bucket_shape: Some(config.sampling.bins_per_axis),
             max_observations: config.sampling.max_observations,
             min_observations: config.min_observations,
@@ -933,6 +935,7 @@ impl EstimatorConfig {
                 },
             },
             correction: CorrectionConfig {
+                mode: options.correction_mode,
                 sampling,
                 min_observations: options.min_observations,
                 factor_bounds: CorrectionFactorBounds {

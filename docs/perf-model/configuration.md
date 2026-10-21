@@ -50,9 +50,9 @@ print(model.diagnostics()["provenance"])
 
 The canonical configuration also carries quantization overrides and `attention_backend`, `moe_backend`, `moe_kernel_source` (default absent), `enable_eplb` (default `false`), and `wideep_num_slots` (default absent). These controls reach model construction, KV memory sizing, and replay provenance. EPLB/slots and nondefault MoE backend or kernel-source selection require an MoE model. Collected FPM interpolation cannot represent EPLB, slots, MoE backend, or kernel-source overrides; it rejects an explicit incompatible request and is skipped during automatic selection for those identities.
 
-`moe_kernel_source` selects an exact, nonblank collected `kernel_source` label for fused MoE compute. It is distinct from the existing `moe_backend` graph/backend control; source labels are not backend aliases and are preserved without trimming. `None` keeps the existing default source-selection policy, including eligible low-latency NVFP4 selection. `SILICON` reads only the requested source's table; `EMPIRICAL` derives its estimate from that same source; `HYBRID` may fall back to empirical estimation within that source, but does not substitute a different source. Missing source data remains an error. An explicit `moe_torch_flow_min_latency` requires gated NVFP4 and at most 128 tokens after attention-DP gathering. Pure-roofline `SOL` remains table-independent and does not claim measured support for the requested source.
+`encoder_parallel` (default absent) compiles a VL model's vision tower in the given layout, `tp` (sharded over the tensor-parallel group) or `dp` (replicated, images split across ranks), so the estimator can price encoder calls. It requires a model with a vision encoder, is omitted from the serialized payload when unset, and is part of the estimator identity, cache keys and provenance. Llama 4 rejects `dp`.
 
-Selected `prefill_graph_profile` and observed `decode_workload_distribution` profiles require `moe_kernel_source=None`. Their qualified composition and source identity are fixed; an explicit source override is rejected even when its label matches the measured kernel. An absent or null source preserves the approved profile identity and predictions.
+`moe_kernel_source` selects an exact, nonblank collected `kernel_source` label for fused MoE compute. It is distinct from the existing `moe_backend` graph/backend control; source labels are not backend aliases and are preserved without trimming. `None` keeps the existing default source-selection policy, including eligible low-latency NVFP4 selection. `SILICON` reads only the requested source's table; `EMPIRICAL` derives its estimate from that same source; `HYBRID` may fall back to empirical estimation within that source, but does not substitute a different source. Missing source data remains an error. An explicit `moe_torch_flow_min_latency` requires gated NVFP4 and at most 128 tokens after attention-DP gathering. Pure-roofline `SOL` remains table-independent and does not claim measured support for the requested source.
 
 `moe_perf.parquet` may include Boolean selection metadata `default_eligible`. An absent column preserves legacy automatic selection; when present, every value must be a non-null Boolean. A `false` row requires a nonblank string `kernel_source`, preserved exactly, and is available only through that named source. It cannot enter automatic standard or low-latency grids, including empirical cross-shape and cross-quant reference selection. Among eligible rows, existing source priority and first-row precedence remain unchanged. Default table views, coverage, and readiness use those same eligible grids; raw Parquet enumeration retains all measured rows. Malformed eligibility metadata is an invalid-data error, never a missing-data fallback. The flag is not a measurement identity dimension. Collector finalization preserves it during merges, including existing annotations when a legacy recollection omits the column; genuinely new legacy keys remain eligible.
 
@@ -89,14 +89,85 @@ selection attempts, effective backend version, data policy, selected root,
 and complete estimator configuration. Its resolved config pins the selected
 mode with deny so saved replay input repeats that selection.
 
-Prompt-lookup verification uses the same constructor: set `speculation` to
-`{"kind": "ngram", "params": {"num_speculative_tokens": 2}}` in Python/JSON, or
-`ForwardPassSpeculationConfig::Ngram { num_speculative_tokens: 2 }` in Rust.
-It supports vLLM op-level timing with 1–5 draft tokens and `nextn: 0`; auto can
-select op-level but cannot fall back to an unsupported speculative estimator.
-The cost configuration is retained in provenance and saved recommendations.
-Acceptance rates and the scheduler seed stay in the CLI/Replay speculation
-configuration; they do not change the model's target-verification graph.
+### Speculative decoding configuration
+
+Use the same `best_available(config)` constructor and returned model for
+speculative iteration costs. The canonical `speculation` field carries the
+existing SDK scheme identity:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `speculation` | `null` | Optional speculative scheme; omit it for the existing autoregressive or legacy `nextn` configuration. |
+| `speculation.kind` | Required | Registered scheme name: `none`, `mtp`, `ngram`, `eagle3`, `dflash`, `dspark`, or `draft_model`. A valid `none` configuration normalizes to disabled speculation. Scheme, model, and backend capability checks still apply. |
+| `speculation.params` | `{}` | Scheme-specific parameters, validated by the existing scheme implementation. Unknown parameters are rejected. |
+| `speculation.draft_model_path` | `null` | Draft checkpoint path or model ID. Required and verified for standalone `draft_model`, which builds its graph from that checkpoint. |
+| `speculation.draft_config` | `null` | Parsed draft checkpoint configuration retained as identity evidence. Learned schemes can reuse resolved geometry; this field does not replace `draft_model_path` for standalone `draft_model`. |
+
+For example, Python/JSON prompt lookup retains its existing shape:
+`{"kind": "ngram", "params": {"num_speculative_tokens": 2}}`. MTP uses
+`{"kind": "mtp", "params": {"depth": 2}}`. Legacy `nextn` input remains
+supported; do not combine a nonzero `nextn` with `speculation`. The generic cost
+API uses each scheme's parameter validation rather than a shared 1–5 draft-token
+limit. The existing n-gram contract retains vLLM and 1–5 draft tokens. Replay's
+backend, scheme, and scheduling limits remain separate.
+
+Rust callers now construct the public struct instead of the former
+`ForwardPassSpeculationConfig::Ngram` enum variant:
+
+```rust
+use aisimulate_core::{
+    BackendKind, DatabaseMode, EstimationMode, ForwardPassPerfModel,
+    ForwardPassPerfModelConfig, ForwardPassSpeculationConfig, ForwardPassWorkerType,
+};
+
+let mut config = ForwardPassPerfModelConfig::new(
+    "Qwen/Qwen3-8B", "h200_sxm", BackendKind::Vllm, ForwardPassWorkerType::Decode,
+);
+config.estimation_mode = EstimationMode::OpLevel;
+config.database_mode = DatabaseMode::Sol;
+config.speculation = Some(ForwardPassSpeculationConfig {
+    kind: "ngram".into(),
+    params: [("num_speculative_tokens".into(), 2.into())].into_iter().collect(),
+    draft_model_path: None,
+    draft_config: None,
+});
+let model = ForwardPassPerfModel::best_available(config)?;
+```
+
+This is a Rust source migration; existing n-gram JSON and legacy `nextn`
+configuration remain readable. OP timing and analytical SOL reuse the same
+speculative graph: choose `estimation_mode="op_level"` and set `database_mode`
+to the desired database policy, or `"SOL"` for analytical timing. SOL is not a
+new estimator mode, and individual operations may lack SOL support. FPM's
+`estimator_config.fpm_interpolation.method="sol"` instead controls interpolation
+of measured whole-forward data; it does not select analytical-only timing.
+
+Query conventions remain unchanged. For OP/SOL,
+`estimate_forward_pass_time_ms()` consumes already-packed `ForwardPassMetrics`
+decode counters: for `B` real requests, verification width `v`, and per-request
+KV length `s`, use `num_decode_requests = B*v` and
+`sum_decode_kv_tokens = B*v*s`. Their ratio remains `s`; the query does not apply
+the width again. `predict_decode_latency_total()` wraps the same counters.
+`static_phase_latency()` instead takes the real request batch and applies the
+configured verification width internally. This OP telemetry convention is
+distinct from the proposed speculative FPM mapping, which remains unsupported.
+
+The canonical constructor currently supports explicit speculative schemes with
+OP/SOL timing. FPM interpolation and regression are unsupported candidates for
+these schemes. An explicit FPM request with `fallback_policy="deny"` fails;
+`auto` or an explicit mode with `fallback_policy="allow"` can select a supported
+OP candidate while preserving the complete speculative identity. They do not
+drop speculation to obtain an autoregressive estimate. FPM profiles remain
+autoregressive-only. Lower-level FPM hybrid code does not imply support through
+the canonical ForwardPassMetrics query API.
+
+Acceptance assumptions and scheduler seeds belong to the prediction/Replay
+layer, not this cost configuration. The returned model continues to estimate
+iteration latency; its constructor and query signatures are unchanged. For
+prediction and AgentX, the [registered-scheme Replay input](../replay/engine/speculation.md#registered-schemes)
+adds acceptance and a seed while retaining this cost identity. That path uses
+the existing linear 1–5-token executor and requires fixed KV capacity; broader
+cost-model support does not imply broader scheduler support.
 
 ### Estimator controls
 
@@ -104,6 +175,10 @@ configuration; they do not change the model's target-verification graph.
 and Replay, then parsed and validated in Rust. Unknown fields report their
 nested paths. The supported namespaces are:
 
+- `op_level.execution_profile`: optional pinned external operation graph, with
+  an absolute `path` and lowercase `sha256`. See
+  [external execution profiles](methods/op-level.md#external-execution-profiles)
+  for admission, data isolation and query limits.
 - `features`: `attention_kv_weight`, `prefill_attention_pair_weight`, and
   `ffn_token_weight`, each defaulting to 1.0. These currently affect regression
   only; positive finite values are required when regression is constructed.
@@ -117,9 +192,9 @@ nested paths. The supported namespaces are:
   fit only when retrying a singular equation. `rebuild_interval` defaults to JSON `null` / Python
   `None`, disabling periodic rebuilding. A positive integer opts into
   rebuilding after that many retained-sample mutations.
-- `correction`: `enabled` (true), independent `sampling`, `min_observations`
+- `correction`: `enabled` (true), `mode` (`auto`), independent `sampling`, `min_observations`
   (5), `factor_bounds` (min 0.5, max 2.0), and the existing `max_num_tokens`
-  (8192), `max_batch_size` (512), and `max_kv_tokens` (2000000) ranges.
+  (8192), `max_batch_size` (512), and `max_kv_tokens` (2000000) fixed-policy ranges.
 - `fpm_interpolation.method`: `auto` (default), `sol`, or `direct`. Rust selects
   SOL for a registered architecture, or direct interpolation for a verified
   architecture without a registered class when a profile is supplied. Without
@@ -183,7 +258,6 @@ never switch estimator or interpolation method. A registered model's graph
 construction failure does not change SOL to direct; top-level fallback still
 follows the configured estimator ordering and policy.
 
-- `op_level`: optional `decode_workload_distribution` selects a measured decode-MoE distribution, and `prefill_graph_profile` selects a qualified direct-prefill graph composition. Saved configurations retain the resolved immutable `prefill_graph_profile_id`, which is validated on reload. Unknown fields are rejected.
 - `fpm_interpolation`: `text_only` (false) permits text prefill/decode profiles
   for multimodal architectures while retaining encoder weights. It does not
   supply encoder timing. `unrecorded_quant_modes` (empty) may contain `fmha`
@@ -193,22 +267,42 @@ follows the configured estimator ordering and policy.
   `fpm_parquet_path` selects an external FPM parquet with its same-stem metadata
   sidecar. Unknown fields are rejected.
 
-Engine replay rank arguments accept `decode_workload_distribution` (alias `aic_decode_workload_distribution`) only with AIC timing. An active selector paired with a non-AIC timing model, including fixed or polynomial timing, is rejected. The AFD companion's fixed timing and legacy estimator paths also reject active selectors because they cannot apply the profile. `None` preserves ordinary timing in these paths.
-
 Sampling defaults to `bins_per_axis: [4, 4]` and `max_observations: 64` per
 logical store. Rectangular grids were already supported. Regression's
 `sampling.axes` now selects one to six distinct coordinates, defaulting to
 `[attention, moe]`; `bins_per_axis` must have the same length, contain positive
 integers, and have a representable product. The dimension is the number of
 selected axes, independent of how many features the fit uses. Regression uses
-dynamic `log1p` retention coordinates and fits standardized feature values. Correction
-uses fixed raw workload coordinates; its one-dimensional prefill grid uses
-the product of the two axis counts. Retention evicts the oldest sample from
-the most populated cell when the store exceeds its budget.
+dynamic `log1p` retention coordinates and fits standardized feature values. Correction's
+one-dimensional prefill grid uses the product of the two axis counts. Its coordinate
+transform and bounds depend on the policy below. Balanced retention evicts the oldest
+sample from the most populated cell when the store exceeds its budget.
 
-Correction explicitly reports `feature_space: legacy_workload`. Its existing
-prefill/decode/mixed stores and median-ratio calculation remain unchanged at
-default settings. A shared role-based correction space requires separate
+| Correction field | Default | Behavior |
+| --- | --- | --- |
+| `estimator_config.correction.mode` | `auto` | `auto` keeps fixed correction for native AIC estimates and selects `hybrid` for learned forests. `hybrid` uses the fixed grid inside its configured limits and dynamic local correction outside. `fixed` and `dynamic_local` explicitly select a single policy. |
+| `estimator_config.correction.sampling.max_observations` | `64` | Sample-slot budget per workload kind and policy. Hybrid retains independent fixed and dynamic budgets, up to `2 * M` slots per kind (128 by default). Dynamic and hybrid updates take `O(M log M)` time and `O(M)` temporary storage; measure update cost before increasing capacity. |
+
+The fixed policy uses raw workload coordinates and the configured fixed limits.
+The dynamic local policy expands `log1p` bounds as valid feedback arrives, balances
+local samples across the grid, and blends local median ratios with a recent-global
+median. Empty cells and out-of-range queries use that recent-global fallback.
+At the default capacity of 64, it reserves 48 local and 16 recent slots and expires
+samples after 128 admissions. Bounds and cached factors change only on feedback.
+The hybrid policy feeds both stores the same observations and uncorrected base
+predictions; the fixed store continues rejecting out-of-grid observations.
+Selection depends only on the query coordinates and the configured fixed limits,
+including their upper endpoints. An empty or unready in-grid cell keeps the fixed
+factor of 1.0, even if the dynamic store is ready. Dynamic geometry never changes
+the fixed grid. Native AIC can also select `hybrid` explicitly.
+See [learned-model calibration](fpm_ml/learned-forward-pass-model.md#online-correction)
+for the readiness thresholds, shrinkage, and custom-capacity behavior. The existing
+learned-model SDK adapter accepts the equivalent legacy option `correction_mode`;
+canonical native configurations use `estimator_config.correction.mode`.
+
+Correction explicitly reports `feature_space: legacy_workload` for all policies
+and retains separate prefill/decode/mixed stores. Native AIC's default policy
+and median-ratio calculation remain unchanged. A shared role-based correction space requires separate
 accuracy validation and is not accepted as a configuration value in this release.
 
 Use `regression_store_diagnostics()` for per-store counts/readiness. Summary
@@ -252,18 +346,62 @@ These additional public YAML fields are concrete controls:
 
 | Field | Meaning |
 | --- | --- |
-| `engine.gemm_quant_mode`, `moe_quant_mode`, `fmha_quant_mode`, `kvcache_quant_mode`, `comm_quant_mode` | Explicit precision overrides; omitted values follow model/profile normalization. |
+| `engine.gemm_quant_mode`, `moe_quant_mode`, `fmha_quant_mode`, `comm_quant_mode` | Explicit precision overrides; omitted values follow model/profile normalization. |
+| `engine.kvcache_quant_mode` | KV storage precision: `bfloat16`, `fp8`, or `int8`. Omission follows model/profile normalization and can select FP8 for quantized checkpoints. |
 | `engine.attention_backend`, `moe_backend`, `moe_kernel_source` | Runtime graph/backend and exact collected source selectors, subject to canonical validation. |
 | `engine.enable_eplb`, `wideep_num_slots` | Expert load balancing and redundant expert slots; require compatible MoE execution. |
 | `engine.nextn`, `nextn_accepted` | Compute-side MTP identity and separate expected acceptance assumption; both are required for explicit MTP. |
 | `engine.enable_chunked_prefill` | Override chunked prefill; omission preserves the backend default. |
 
-These controls require default timing on language roles. AFD and analytical
-encoder configurations reject the unsupported controls. Use `--stack engine`
+These controls require default timing on language roles. AFD and encoder-pool
+configurations of either mode reject the unsupported controls. Use `--stack engine`
 and the supported model/backend; an older external adapter can reject them at
 capability validation before Replay. Expected acceptance is workload behavior,
 not an estimator-fitting observation. See [Replay features](../replay/features.md)
 for execution and cache combinations.
+
+FP8 tensor-core compute is rejected during estimator construction on pre-SM89
+GPUs, including `a100_sxm`. Choose a BF16 checkpoint on A100, or an FP8-capable
+GPU with matching backend timing data. This checks compute precision, not weight
+storage or KV dtype: weight-only formats that compute in BF16 remain distinct.
+FPM also checks the preserved GEMM/MoE identity before selecting a timing cell,
+including profiles without an original op-level graph.
+Missing hardware metadata still follows the system-spec/data diagnostics.
+Serving runtimes may execute FP8 checkpoints through weight-only kernels such as
+Marlin on these GPUs; AISimulate does not model that path.
+
+### KV precision and token capacity
+
+An explicit `engine.kvcache_quant_mode` or worker timing override takes precedence,
+subject to model/backend and profile validation. An FPM profile supplies its
+recorded `kv_cache_dtype`. Otherwise, the first matching rule below applies:
+
+| Checkpoint metadata | Inferred KV precision |
+|---|---|
+| `kv_cache_quant_algo` is not missing/null, `fp8`, `bfloat16`, or `"none"` (for example, `int8`) | Rejected during checkpoint normalization |
+| DeepSeek V4/V4.1 architecture | FP8 |
+| `kv_cache_quant_algo: fp8` | FP8 |
+| `kv_cache_quant_algo: "none"` | BF16 |
+| KV declaration missing/null or `bfloat16`; weight `quant_algo` is `fp8`, `fp8_block`, or `nvfp4` | FP8 |
+| Other supported configurations | BF16 |
+
+These are AISimulate policies, not serving-engine defaults. `torch_dtype: bfloat16`
+does not prevent FP8 KV inference. For regular language roles using default timing,
+pass `--set engine.kvcache_quant_mode=bfloat16` or set it in YAML to require BF16.
+The explicit engine field also accepts `int8`, subject to model/backend validation;
+this does not make an `int8` checkpoint KV declaration valid.
+Fixed/polynomial timing, EPD, and AFD currently reject this engine override.
+
+Ordinary `predict` output shows each known role's effective KV dtype and source.
+JSON stdout and `prediction.json` summaries expose `kv_cache_precision.<role>`
+with `dtype` and `source`: `user_override`, `checkpoint` (a matching explicit KV
+declaration), `fpm_profile`, or `aisimulate_policy`. `--detail memory` also includes
+`kvcache_quant_mode` beside capacity. Naive fallback and roles without a capacity
+estimate omit this disclosure. Fixed/polynomial timing roles currently size capacity
+at compile time and do not report the resolved precision through this path.
+
+FP8 uses one byte per KV element; BF16 uses two. At the same byte budget, linear
+FP8 KV holds twice as many tokens. This does not imply twice the throughput.
 
 ## Migrating saved configuration
 
@@ -286,8 +424,6 @@ setting's path. The same rule applies to legacy and canonical interpolation
 methods, including an explicit `auto`. An omitted field does not override a
 saved value. `ForwardPassPerfOptions.to_dict()` serializes only arguments
 explicitly supplied to that legacy options object, including explicit defaults.
-
-The migration adapter rejects any non-null `prefill_graph_profile`, `prefill_graph_profile_id`, or `decode_workload_distribution` field, including an orphan profile ID. These selectors require the canonical `ForwardPassPerfModelConfig.estimator_config.op_level` configuration; pass a saved canonical configuration directly to `RustForwardPassPerfModel.best_available` to preserve its profile identity and supported API restrictions. Profile-free legacy configurations continue to migrate normally.
 
 Previously saved CLI timing with `forward_model` retains explicit selection
 and deny. Newly authored requests without a selection use auto. `ForwardPassPerfOptions`

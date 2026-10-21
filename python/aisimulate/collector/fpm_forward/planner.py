@@ -761,6 +761,7 @@ def build_collection_plan(
         ),
         checkpoint_native_dtypes=profile is not None or backend_version is not None,
     )
+    options = options.resolve_model_execution(capability.architecture)
     execution = execution_identity(
         capability.model_config.payload,
         decoder_replay=options.decoder_replay,
@@ -1042,6 +1043,13 @@ def _validate_profile_identities(
             cp_size=topology.cp,
             worker_type=worker_type or "aggregated",
         )
+        if deployment.execution_profile is not None:
+            raise ValueError(
+                "FPM collection does not support speculative execution_profile for the selected deployment "
+                f"{system}/{backend}/{deployment.backend_version}, topology={deployment.parallel_tuple}, "
+                f"worker_type={worker_type or 'aggregated'}; refusing to collect an autoregressive workload "
+                "for a speculative profile"
+            )
         deployments.append(deployment)
         for kv_dtype in capability.dtype.kv_cache_dtypes:
             for policy in policies:

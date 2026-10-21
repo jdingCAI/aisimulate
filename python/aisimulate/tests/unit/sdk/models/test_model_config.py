@@ -9,6 +9,7 @@ Tests model validation, default models, and model-specific configurations.
 
 import json
 from collections import Counter
+from importlib.resources import files
 from typing import ClassVar
 from unittest.mock import patch
 
@@ -351,6 +352,11 @@ class TestHFModelSupport:
         assert hasattr(common, "DefaultHFModels")
         assert isinstance(common.DefaultHFModels, set)
         assert len(common.DefaultHFModels) > 0
+
+    def test_mistral3_is_not_a_bundled_default_model(self):
+        assert "mistralai/Mistral-Medium-3.5-128B" not in common.DefaultHFModels
+        config_path = files("aisimulate_core") / "model_configs" / "mistralai--Mistral-Medium-3.5-128B_config.json"
+        assert not config_path.is_file()
 
     def test_hf_models_have_valid_architecture(self):
         """Test that all HF model IDs have valid architecture mapping."""
@@ -902,6 +908,23 @@ class TestKVCacheElementsPerToken:
         model = self._build_model(hf_id, tp, **moe_kw)
         assert model.model_family == expected_family
         assert model.get_kvcache_elements_per_token() == expected_elems
+
+    @pytest.mark.parametrize("tp,expected_elements", [(1, 4096), (2, 2048), (4, 2048)])
+    @pytest.mark.parametrize("kv_dtype", [common.KVCacheQuantMode.fp8, common.KVCacheQuantMode.bfloat16])
+    def test_nemotron_h_counts_only_attention_kv(self, tp, expected_elements, kv_dtype):
+        model = self._build_model(
+            "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8",
+            tp,
+            kvcache_quant_mode=kv_dtype,
+            moe_tp_size=1,
+            moe_ep_size=tp,
+        )
+        # The bundled config has 8 attention layers, 2 KV heads, and 128-wide heads.
+        # TP >= 2 retains one KV head per rank, including replicated heads at TP4.
+        assert model.get_kvcache_elements_per_token() == expected_elements
+        bytes_per_token = expected_elements * kv_dtype.value.memory
+        assert model.get_kvcache_bytes_per_sequence(64) == 64 * bytes_per_token
+        assert model.get_kvcache_max_tokens(64 * bytes_per_token) == 64
 
     @pytest.mark.parametrize(
         "hf_id",

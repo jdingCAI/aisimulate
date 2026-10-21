@@ -177,6 +177,9 @@ class ForwardPassPerfModelConfig:
     moe_backend: str | None = None
     enable_eplb: bool = False
     wideep_num_slots: int | None = None
+    # Compile the vision tower with this layout ("tp" or "dp") so the estimator
+    # prices encoder calls; None prices the language model only.
+    encoder_parallel: str | None = None
 
     @classmethod
     def from_legacy_engine_config(
@@ -200,6 +203,8 @@ class ForwardPassPerfModelConfig:
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
+        if self.encoder_parallel is None:
+            payload.pop("encoder_parallel")
         payload["transfer_policy"] = _resolve_forward_pass_transfer_policy(self.transfer_policy)
         if self.estimation_mode != "fpm_regression" or self.systems_paths:
             payload["systems_paths"] = _resolve_forward_pass_systems_paths(self.systems_paths)
@@ -228,6 +233,7 @@ class ForwardPassPerfOptions:
     regression_ffn_token_weight: float = 1.0
     bucket_shape: tuple[int, int] | None = None
     regression_ridge_scale: float = 1e-9
+    correction_mode: str = "auto"
 
     def __new__(cls, *args: Any, **kwargs: Any) -> ForwardPassPerfOptions:
         instance = super().__new__(cls)
@@ -328,12 +334,26 @@ class RustForwardPassPerfModel:
     iter1_rank1]]``. Each backend derives its own cross-rank features, and the
     maximum positive ``wall_time`` across ranks is the latency target.
 
-    Correction grids use fixed constructor-time ranges from
+    ``config.estimator_config["correction"]["mode"]`` selects the correction
+    policy. ``"auto"`` keeps fixed correction for native estimates and selects
+    hybrid correction for learned forests; ``"fixed"``, ``"dynamic_local"``,
+    and ``"hybrid"`` select a policy explicitly. The existing learned
+    adapter accepts the equivalent legacy option ``correction_mode``.
+
+    Fixed correction uses constructor-time ranges from
     ``config.estimator_config["correction"]``:
     ``max_num_tokens`` bounds ``sum_prefill_tokens`` and defaults to ``8192``,
     ``max_batch_size`` bounds ``num_decode_requests`` and defaults to ``512``,
     and ``max_kv_tokens`` bounds ``sum_decode_kv_tokens`` and defaults to
-    ``2000000``. ``min_faster_correction_factor`` places an absolute lower bound
+    ``2000000``. Dynamic local correction instead expands ``log1p`` bounds from
+    admitted feedback and uses recent global feedback for empty regions or
+    queries outside those bounds. Prediction queries do not change the grid.
+    Hybrid uses the fixed policy inside its configured limits (including empty
+    or unready cells) and the dynamic policy outside. Both retain their full
+    independent sample budgets and receive the same feedback.
+
+    Both policies apply the configured correction-factor bounds. The legacy
+    option ``min_faster_correction_factor`` places an absolute lower bound
     on corrections below ``1.0`` and must be finite and in ``(0.0, 1.0]``.
     It defaults to ``0.5``, limiting learned speedups to ``2x``.
     ``max_slower_correction_factor`` independently places an absolute upper
@@ -396,11 +416,52 @@ class RustForwardPassPerfModel:
     def predict_prefill_latency(self, bs: int, isl: int, prefix: int = 0) -> float:
         """Return uncorrected native prefill latency in milliseconds.
 
-        ``isl`` is the total sequence length including ``prefix``. A selected graph
-        profile admits only its measured integer shapes; Rust owns validation
-        and prediction. This method returns no scheduler or energy estimate.
+        ``isl`` is the total sequence length including ``prefix``.
+        This method returns no scheduler or energy estimate.
         """
         return self._inner.predict_prefill_latency(bs, isl, prefix)
+
+    @classmethod
+    def from_learned(
+        cls,
+        source: str | os.PathLike[str] | dict[str, Any],
+        options: dict[str, Any] | None = None,
+    ) -> RustForwardPassPerfModel:
+        """API: ``from_learned(source, options=None)``.
+
+        Description: create a forward-pass model from an offline-trained learned
+        artifact (``aic_fpm_learned_forward_perf`` JSON produced by
+        ``aisimulate_core.sdk.fpm_learned``). ``source`` is an artifact path,
+        the artifact JSON text, or the already-parsed artifact mapping. The
+        artifact binds the worker type and the ordered feature ABI; estimation is
+        the learned prediction times a hybrid correction factor accumulated
+        through ``tune_with_fpms()``. Fixed correction applies inside configured
+        limits; dynamic local correction applies outside them. Pass
+        ``options={"correction_mode": "fixed"}`` to retain the legacy fixed grid.
+        Iterations whose workload kind
+        has no trained store return ``None``.
+        """
+        _configure_default_data_roots()
+        import aisimulate_core
+
+        if isinstance(source, dict):
+            source_text = _json_dumps(source)
+        else:
+            source_text = os.fspath(source)
+        inner = aisimulate_core.RustForwardPassPerfModel.from_learned(
+            source_text,
+            _optional_json_dumps(options),
+        )
+        return cls(inner)
+
+    def learned_feature_names(self) -> list[str] | None:
+        """Ordered feature ABI of a learned model; ``None`` for other modes."""
+        return self._inner.learned_feature_names()
+
+    def learned_metadata(self) -> dict[str, Any] | None:
+        """Trainer metadata embedded in a learned artifact; ``None`` for other modes."""
+        raw = self._inner.learned_metadata()
+        return None if raw is None else json.loads(raw)
 
     def estimate_forward_pass_time_ms(self, metrics: dict[str, Any] | list[dict[str, Any]]) -> float | None:
         """API: ``model.estimate_forward_pass_time_ms(metrics) -> float | None``.
@@ -441,6 +502,16 @@ class RustForwardPassPerfModel:
         to one iteration.
         """
         self._inner.tune_with_fpms(_json_dumps(_normalize_tuning_iterations(iterations)))
+
+    def vision_operations(self, shapes: list[dict[str, int]]) -> list[tuple[str, float, float, str]]:
+        """API: ``model.vision_operations(shapes) -> list[(name, latency_ms, energy_wms, source)]``.
+
+        Description: per-op values of one vision-encoder call over image
+        groups ``{"sequences", "patch_tokens", "transformer_tokens",
+        "output_tokens", "images"}``. Requires a native estimator constructed
+        with ``encoder_parallel`` for a VL model.
+        """
+        return [tuple(entry) for entry in self._inner.vision_operations(_json_dumps(shapes))]
 
     def static_phase_latency(self, *, batch_size: int, input_tokens: int, output_tokens: int, prefill: bool) -> float:
         """Native static latency in ms, before online correction.
@@ -1423,8 +1494,6 @@ def _engine_config_json(model: Any, database: Any) -> str:
                         "dcp_comm": getattr(model_config, "dcp_comm", None),
                         "dcp_q_replicate": getattr(model_config, "dcp_q_replicate", None),
                         "workload_distribution": getattr(model_config, "workload_distribution", None),
-                        "decode_workload_distribution": getattr(model_config, "decode_workload_distribution", None),
-                        "prefill_graph_profile": getattr(model_config, "prefill_graph_profile", None),
                         "overwrite_num_layers": getattr(model_config, "overwrite_num_layers", None),
                         "sms": getattr(model_config, "sms", None),
                         "moe_backend": getattr(model_config, "moe_backend", None),

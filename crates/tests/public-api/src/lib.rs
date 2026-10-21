@@ -99,16 +99,6 @@ pub fn best_available_model(
     ForwardPassPerfModel::best_available(config)
 }
 
-/// The qualified direct-prefill method is on the canonical returned model.
-pub fn predict_graph_prefill(
-    model: &ForwardPassPerfModel,
-    bs: u32,
-    isl: u32,
-    prefix: u32,
-) -> Result<f64, AicError> {
-    model.predict_prefill_latency(bs, isl, prefix)
-}
-
 pub fn best_available_model_with_roots(
     mut config: ForwardPassPerfModelConfig,
     systems_root: impl AsRef<Path>,
@@ -128,8 +118,8 @@ mod tests {
     use super::*;
     use aisimulate_core::{
         ENGINE_CONFIG_SCHEMA_VERSION, ENGINE_SPEC_SCHEMA_VERSION, FPM_VERSION, ForwardPassMetrics,
-        ForwardPassRegressionWorkloadKind, TimingEvidenceSource, TimingEvidenceSummary,
-        TimingOperationEvidence, TimingPhaseEvidence,
+        ForwardPassRegressionWorkloadKind, ForwardPassSpeculationConfig, TimingEvidenceSource,
+        TimingEvidenceSummary, TimingOperationEvidence, TimingPhaseEvidence,
     };
 
     #[test]
@@ -165,42 +155,14 @@ mod tests {
         // v19: Dsv41AttentionOp gained kv_cache_layout.
         // v20: FpmForwardOp gained original_fmha_quant_mode for selector diagnostics.
         // v21: EngineConfig and MoeOp gained exact moe_kernel_source identity.
-        // v22: observed MoE selection and exact prefill graph composites.
         // v23: ParallelMapping gained optional recorded DCP identity.
         // v24: FpmForwardOp carries typed DCP separately from matching strings.
         // v25: SOL/direct interpolation selector combined with typed DCP.
         // v26: attention / MLA / DSA ops gained tail-appended decode-CP dcp_size.
-        assert_eq!(ENGINE_SPEC_SCHEMA_VERSION, 26);
+        // v29: EngineSpec carries the optional vision section (SGLang VL host loop).
+        assert_eq!(ENGINE_SPEC_SCHEMA_VERSION, 29);
         assert_eq!(FPM_VERSION, 1);
         assert_eq!(ForwardPassMetrics::default().version, FPM_VERSION);
-    }
-
-    #[test]
-    fn direct_graph_api_rejects_an_unselected_regression_model() {
-        let model = regression_model().unwrap();
-        assert!(predict_graph_prefill(&model, 1, 1024, 0).is_err());
-        let mut controls = EstimatorConfig::default();
-        controls.op_level.prefill_graph_profile =
-            Some("sglang_glm52_nvfp4_vr_nvl72_tp4_graph_v1".into());
-        controls.op_level.prefill_graph_profile_id =
-            Some("530a1359d5d14ec5d9f39c1adede0631388c89ff2c549d66c37c62d7aaaf0b10".into());
-        assert!(controls.op_level.decode_workload_distribution.is_none());
-        let mut config = ForwardPassPerfModelConfig::new(
-            "missing-model",
-            "missing-system",
-            BackendKind::Sglang,
-            ForwardPassWorkerType::Prefill,
-        );
-        config.estimator_config = controls;
-        // Auto/default correction cannot admit a direct-only graph profile.
-        // This fails before Python/model/system lookup despite nonexistent data.
-        assert!(
-            ForwardPassPerfModel::best_available(config)
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("requires explicit")
-        );
     }
 
     struct LatencyOnlyProvider;
@@ -267,6 +229,81 @@ mod tests {
     #[test]
     fn ergonomic_builder_is_available_to_external_crates() {
         let _builder = configured_builder();
+    }
+
+    #[test]
+    fn speculative_identity_round_trips_through_public_configuration() {
+        let mut config = ForwardPassPerfModelConfig::new(
+            "test/target",
+            "test-system",
+            BackendKind::Vllm,
+            ForwardPassWorkerType::Decode,
+        );
+        config.estimation_mode = EstimationMode::OpLevel;
+        config.database_mode = DatabaseMode::Sol;
+        let draft_config = serde_json::json!({
+            "architectures": ["LlamaForCausalLM"],
+            "hidden_size": 256,
+            "num_hidden_layers": 2,
+        });
+        config.speculation = Some(ForwardPassSpeculationConfig {
+            kind: "draft_model".into(),
+            params: [("num_speculative_tokens".into(), 8.into())]
+                .into_iter()
+                .collect(),
+            draft_model_path: Some("test/draft".into()),
+            draft_config: Some(draft_config.as_object().unwrap().clone()),
+        });
+
+        let encoded = serde_json::to_value(&config).unwrap();
+        assert_eq!(
+            encoded["speculation"],
+            serde_json::json!({
+                "kind": "draft_model",
+                "params": {"num_speculative_tokens": 8},
+                "draft_model_path": "test/draft",
+                "draft_config": draft_config,
+            })
+        );
+        let restored: ForwardPassPerfModelConfig = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored, config);
+    }
+
+    #[test]
+    fn legacy_ngram_json_and_nextn_keep_their_public_contract() {
+        let ngram = serde_json::json!({
+            "kind": "ngram", "params": {"num_speculative_tokens": 2},
+        });
+        let speculation: ForwardPassSpeculationConfig =
+            serde_json::from_value(ngram.clone()).unwrap();
+        assert_eq!(speculation.kind, "ngram");
+        assert_eq!(speculation.draft_model_path, None);
+        assert_eq!(speculation.draft_config, None);
+        assert_eq!(serde_json::to_value(speculation).unwrap(), ngram);
+
+        let config: ForwardPassPerfModelConfig = serde_json::from_value(serde_json::json!({
+            "model": "test/target", "system": "test-system", "backend": "vllm",
+            "worker_type": "decode", "nextn": 2,
+        }))
+        .unwrap();
+        assert_eq!(config.nextn, 2);
+        assert_eq!(config.speculation, None);
+        let restored: ForwardPassPerfModelConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(restored, config);
+    }
+
+    #[test]
+    fn speculative_schema_defaults_params_and_excludes_acceptance() {
+        let speculation: ForwardPassSpeculationConfig =
+            serde_json::from_value(serde_json::json!({"kind": "none"})).unwrap();
+        assert!(speculation.params.is_empty());
+        assert!(
+            serde_json::from_value::<ForwardPassSpeculationConfig>(serde_json::json!({
+                "kind": "ngram", "params": {"num_speculative_tokens": 2}, "accepted_tokens": 1.5,
+            }))
+            .is_err()
+        );
     }
 
     #[test]
@@ -575,7 +612,7 @@ mod tests {
         }
         let graph = builder.finish().unwrap();
         let prepared = graph
-            .prepare_snapshots(1, AgenticSnapshotOptions { seed: 42 })
+            .prepare_snapshots(1, AgenticSnapshotOptions::seeded(42))
             .unwrap();
         assert_eq!(prepared.snapshots().len(), 1);
         let evidence = &prepared.snapshots()[0];
@@ -654,6 +691,7 @@ mod tests {
             max_in_flight: None,
             record_per_request: true,
             sla: Default::default(),
+            encoder: None,
             requests: Vec::new(),
         };
         let report = Replayer::new(
@@ -706,6 +744,7 @@ pub fn rebuild_replay_report_literals(
             kv_eviction_assumption: report.kv_eviction_assumption,
             committed_prefill_tokens: report.committed_prefill_tokens,
             g3_offload: report.g3_offload,
+            kvcr: report.kvcr,
             g2_domains: report.g2_domains,
             request_counts: report.request_counts,
             throughput: report.throughput,
@@ -737,6 +776,7 @@ pub fn rebuild_replay_report_literals(
             uuid: record.uuid,
             arrival_time_ms: record.arrival_time_ms,
             dispatched_at_ms: record.dispatched_at_ms,
+            tokenized_ms: record.tokenized_ms,
             first_admit_ms: record.first_admit_ms,
             terminal_time_ms: record.terminal_time_ms,
             first_token_ms: record.first_token_ms,
@@ -755,6 +795,11 @@ pub fn rebuild_replay_report_literals(
             prefill_worker_idx: record.prefill_worker_idx,
             decode_worker_idx: record.decode_worker_idx,
             prefill_admit_ms: record.prefill_admit_ms,
+            encoder_ready_ms: None,
+            frontend_ready_ms: None,
+            scheduler_received_ms: None,
+            selected_ms: None,
+            prefill_complete_ms: None,
             source_held_ms: record.source_held_ms,
             destination_reserved_ms: record.destination_reserved_ms,
             destination_activated_ms: record.destination_activated_ms,

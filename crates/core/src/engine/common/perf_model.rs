@@ -42,18 +42,6 @@ impl std::fmt::Debug for PerfModel {
 }
 
 impl PerfModel {
-    // Injected prediction can fail even when geometry validation accepts every
-    // batch, so admission stays transactional for such providers. Built-in
-    // closed-form models, which the engine also wraps as `External`, cannot.
-    pub(crate) fn prefill_pass_can_fail(&self) -> bool {
-        match self {
-            Self::Polynomial => false,
-            Self::External { timing } => {
-                timing.prefill_batch_validation_can_fail() || timing.prefill_prediction_can_fail()
-            }
-        }
-    }
-
     pub fn validate_prefill_batch(&self, requests: &[(usize, usize)]) -> Result<()> {
         if let PerfModel::External { timing } = self {
             timing
@@ -61,6 +49,39 @@ impl PerfModel {
                 .context("external prefill batch cannot be represented")?;
         }
         Ok(())
+    }
+
+    /// Predict the vision-encoder time in milliseconds for one batch of
+    /// distinct cache-miss images, grouped by shape for the provider.
+    pub fn predict_vision_time(&self, images: &[crate::engine::ImageSpec]) -> Result<f64> {
+        if images.is_empty() {
+            return Ok(0.0);
+        }
+        let PerfModel::External { timing } = self else {
+            anyhow::bail!("polynomial timing does not support vision batches");
+        };
+        let mut shapes: Vec<crate::engine::VisionShape> = Vec::new();
+        for image in images {
+            match shapes
+                .iter_mut()
+                .find(|shape| shape.encoder == image.encoder)
+            {
+                Some(shape) => shape.count += 1,
+                None => shapes.push(crate::engine::VisionShape {
+                    encoder: image.encoder,
+                    count: 1,
+                }),
+            }
+        }
+        let time = timing
+            .predict_vision_ms(&shapes)
+            .context("external vision prediction failed")?
+            .context("timing provider does not support vision batches")?;
+        ensure!(
+            time.is_finite() && time >= 0.0,
+            "vision timing provider returned invalid duration {time}ms"
+        );
+        Ok(time)
     }
 
     /// Predict prefill time in milliseconds.
@@ -205,32 +226,6 @@ mod tests {
             _total_kv_tokens: usize,
         ) -> anyhow::Result<f64> {
             anyhow::bail!("missing decode point")
-        }
-    }
-
-    #[test]
-    fn only_injected_prefill_providers_make_admission_transactional() {
-        use crate::engine::timing::{TimingModelConfig, built_in_timing_model};
-
-        // The engine wraps built-in models as `External` too; they must not
-        // pay for an admission rollback image they can never restore.
-        for config in [
-            TimingModelConfig::Polynomial,
-            TimingModelConfig::Fixed {
-                prefill_ms: 2.0,
-                decode_ms: 1.0,
-            },
-        ] {
-            let model = PerfModel::External {
-                timing: built_in_timing_model(&config).unwrap(),
-            };
-            assert!(!model.prefill_pass_can_fail(), "{config:?}");
-        }
-        for timing in [
-            Arc::new(EchoBatchTiming) as Arc<dyn TimingModel>,
-            Arc::new(FailingTiming),
-        ] {
-            assert!(PerfModel::External { timing }.prefill_pass_can_fail());
         }
     }
 
